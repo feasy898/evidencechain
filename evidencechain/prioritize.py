@@ -1,11 +1,11 @@
-"""Prioritization layer: deterministic priority score + independent auditor.
+"""Priority-ranking layer: deterministic priority score + independent auditor.
 
-Priority formula (no model involved; verifiable by hand):
-    priority_score = CVSS x asset criticality weight x reachability factor
+Priority score formula (no model involved, can be recomputed by hand):
+    priority_score = CVSS × asset-criticality weight × reachability factor
 
-The independent auditor `audit_ranking` recomputes the order from its own data
-and flags any disagreement, missing evidence, duplicate keys, or out-of-range
-CVSS. A conclusion never gets to grade itself.
+Independent auditor `audit_ranking`: recomputes the ranking from its own data.
+Order mismatch, missing evidence, duplicate keys, out-of-range CVSS — anything
+fails gets flagged (a conclusion is never allowed to vouch for itself).
 """
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ SEVERITY_BANDS = (
 
 
 def severity_of(cvss: float) -> str:
-    """CVSS -> severity band (pure numeric thresholds, no external vocabulary)."""
+    """CVSS → severity band (pure numeric banding, no external vocabulary)."""
     for threshold, name in SEVERITY_BANDS:
         if cvss >= threshold:
             return name
@@ -43,7 +43,7 @@ def severity_of(cvss: float) -> str:
 
 
 def priority_score(risk: RiskItem) -> float:
-    """priority_score = CVSS x asset criticality weight x reachability factor."""
+    """Priority score = CVSS × asset-criticality weight × reachability factor."""
     weight = ASSET_WEIGHTS[risk.asset_criticality]
     factor = REACH_FACTORS[risk.reachability]
     return round(risk.cvss * weight * factor, 4)
@@ -54,7 +54,7 @@ def _sort_key(risk: RiskItem):
 
 
 def prioritize(risks: Sequence[RiskItem]) -> List[RiskItem]:
-    """Sort by priority score descending; ties broken by dedup key (unique result)."""
+    """Sort: priority score descending, ties broken by dedup key ascending (unique result)."""
     return sorted(risks, key=_sort_key)
 
 
@@ -64,20 +64,21 @@ def expected_order(risks: Sequence[RiskItem]) -> List[str]:
 
 
 def audit_ranking(ranked: Sequence[RiskItem]) -> dict:
-    """Independent audit: four machine checks over an already-ranked result."""
+    """Independent audit: four machine checks over the already-ranked result; returns a verdict."""
     actual = [r.key for r in ranked]
     expected = expected_order(ranked)
 
     ordering_ok = actual == expected
-    ordering_detail = "order matches the recomputation"
+    ordering_detail = "order matches recomputation"
     if not ordering_ok:
         first_bad = next(
             (i for i, (a, e) in enumerate(zip(actual, expected)) if a != e),
             min(len(actual), len(expected)),
         )
         ordering_detail = (
-            f"diverges from recomputation at position {first_bad + 1}: "
-            f"actual={actual[first_bad:first_bad + 3]} expected={expected[first_bad:first_bad + 3]}")
+            f"order diverges from recomputation starting at position {first_bad + 1}: "
+            f"actual={actual[first_bad:first_bad + 3]} "
+            f"expected={expected[first_bad:first_bad + 3]}")
 
     dup = sorted({k for k in actual if actual.count(k) > 1})
     missing = [r.key for r in ranked if not r.evidence]
@@ -92,12 +93,12 @@ def audit_ranking(ranked: Sequence[RiskItem]) -> dict:
          "detail": "no duplicate dedup keys" if not dup else f"duplicate keys: {', '.join(dup)}"},
         {"name": "evidence_present",
          "status": "PASS" if not missing else "FAIL",
-         "detail": "every risk carries evidence" if not missing else
-                   f"missing evidence: {', '.join(missing)}"},
+         "detail": "every conclusion carries an evidence row" if not missing
+                   else f"missing evidence: {', '.join(missing)}"},
         {"name": "cvss_within_range",
          "status": "PASS" if not out_of_range else "FAIL",
-         "detail": "all CVSS values within 0..10" if not out_of_range else
-                   f"out of range: {', '.join(out_of_range)}"},
+         "detail": "all CVSS scores within 0..10" if not out_of_range
+                   else f"out of range: {', '.join(out_of_range)}"},
     ]
     status = "PASS" if all(c["status"] == "PASS" for c in checks) else "FAIL"
     return {

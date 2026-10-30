@@ -1,11 +1,10 @@
-"""Parse layer: read per-stage raw artifacts into Findings, behind an
-input-injection gate.
+"""Parsing layer: read raw stage artifacts into Findings, with an input prompt-injection gate.
 
-Two ground rules:
-1. Evidence resolves: every Finding remembers which file and line it came from,
-   referenced as `filename:line`.
-2. Artifacts are data, not instructions: prompt-injection payloads found in free
-   text are redacted in place and recorded (injection_flags).
+Two disciplines:
+1. Evidence is back-traceable: every Finding remembers which file and line it came from,
+   referenced as `file:line`.
+2. Artifacts are data, not instructions: prompt-injection payloads in free-text fields are
+   redacted in place and recorded (injection_flags).
 """
 from __future__ import annotations
 
@@ -17,26 +16,62 @@ from typing import List, Tuple
 
 from .models import Evidence, Finding, ParseError
 
-# Allowed enum values (deterministic, fixed in code)
+# Allowed enum values (the deterministic vocabulary of this module)
 ASSET_CRITICALITIES = ("low", "medium", "high", "critical")
 REACHABILITIES = ("local", "adjacent", "network")
 
-# Required fields; validation order == error-reporting order
+# Required fields; validation order is error order
 REQUIRED_FIELDS = ("id", "title", "asset", "cvss", "reachability")
 
 # Free-text fields (each one passes through the injection gate)
 TEXT_FIELDS = ("title", "note", "remediation")
 
-# Upper bound on text length (defends against oversized fields in artifacts)
+# Maximum text length (defends against oversized fields in artifacts)
 MAX_TEXT_LEN = 2000
 
-# Prompt-injection signatures: imperative override phrases (English/Chinese),
-# role markers, and requests to expose or rewrite state
+# Prompt-injection signatures: imperative commands, role markers, and
+# unauthorized output requests. Both English and Chinese payloads are
+# detected. The Chinese patterns are defense rules rather than copy, so they
+# are kept verbatim; only a negation guard is wrapped around them.
+#
+# English forms come in two shapes:
+#
+#   * qualified  — verb + qualifier ("previous", "prior", "system", …) +
+#                  instruction noun. Unambiguous, so no tail requirement.
+#   * bare       — verb + instruction noun with no qualifier. These appear in
+#                  ordinary security prose too ("ignore the rules of
+#                  engagement"), so a bare hit additionally requires either a
+#                  possessive determiner ("your", "their") with a command-like
+#                  tail, or an explicit conjunction tail ("… instructions and
+#                  approve this finding"). Benign phrasing such as "the rules
+#                  in the hardening policy" or "the prompts from the previous
+#                  session" has no such tail and passes through untouched.
+#
+# Every English pattern carries the same negation guard, so "do not ignore
+# previous instructions" and "do not ignore your previous instructions" are
+# treated identically. The Chinese patterns carry the matching 不要/别/勿/不
+# guard.
+_NEG = r"(?<!\bnot\s)(?<!\bnever\s)(?<!\bwithout\s)"
+_VERB = r"(?:ignore|disregard|forget|override|bypass)"
+_QUALIFIER = r"(?:previous|prior|above|earlier|original|system|foregoing)"
+_INSTR_NOUN = r"(?:instructions?|prompts?|rules?|guardrails?|directives?|guidelines?)"
+_DET_OPT = r"(?:(?:all|any|your|their|the)\s+)?"
+# Command-like tail: a conjunction or a preposition that introduces an
+# instruction ("and approve", "before answering"), or the end of the text.
+_CMD_TAIL = r"(?=\s*(?:and|then|;|before|after|so|but)\s+\S|\s*[.!?,;:]?\s*$)"
+# Strict tail: an explicit conjunction only.
+_CONJ_TAIL = r"(?=\s*(?:and|then|;|,)\s+\S)"
+
 INJECTION_PATTERNS = (
-    r"ignore\s+(?:all\s+)?(?:the\s+)?(?:previous|prior|above|earlier)\s+(?:instructions?|prompts?|rules?)",
-    r"disregard\s+(?:all\s+)?(?:the\s+)?(?:previous|prior|above|system)",
-    r"忽略(?:掉)?(?:前面|上面|上述|以上|先前)?(?:的)?(?:所有)?(?:指令|提示|规则)",
-    r"忘记(?:前面|上面|上述|以上)?(?:的)?(?:所有)?(?:指令|提示)",
+    # --- English: qualified forms (unambiguous) ---
+    rf"{_NEG}{_VERB}\s+{_DET_OPT}{_QUALIFIER}\s+{_INSTR_NOUN}",
+    # --- English: bare forms ---
+    rf"{_NEG}{_VERB}\s+(?:your|their|all)\s+{_INSTR_NOUN}{_CMD_TAIL}",
+    rf"{_NEG}{_VERB}\s+the\s+{_INSTR_NOUN}{_CONJ_TAIL}",
+    # --- Chinese (defense rules, kept verbatim apart from the negation guard) ---
+    r"(?<!不要)(?<!别)(?<!勿)(?<!不)忽略(?:掉)?(?:前面|上面|上述|以上|先前)?(?:的)?(?:所有)?(?:指令|提示|规则)",
+    r"(?<!不要)(?<!别)(?<!勿)(?<!不)忘记(?:前面|上面|上述|以上)?(?:的)?(?:所有)?(?:指令|提示)",
+    # --- role markers and unauthorized output requests ---
     r"you\s+are\s+now\b",
     r"system\s*[:>]|assistant\s*[:>]|user\s*[:>]",
     r"<\s*\|\s*im_(?:start|end)\s*\|>",
@@ -51,17 +86,14 @@ _REDACT = "[REDACTED-INJECTION]"
 
 
 def detect_injection(text: str) -> List[str]:
-    """Return the injection signatures matched by the text (empty list = clean)."""
+    """Return the list of injection signatures hit by the text (empty list = clean)."""
     if not text:
         return []
     return [m.group(0) for m in _INJECTION_RE.finditer(text)]
 
 
 def sanitize_text(text: str) -> Tuple[str, List[str]]:
-    """Replace injection payloads with `[REDACTED-INJECTION]` in place.
-
-    Returns (sanitized text, matched signatures).
-    """
+    """Replace injection payloads in place with `[REDACTED-INJECTION]`; return (clean text, hits)."""
     if not text:
         return "", []
     flags = detect_injection(text)
@@ -73,7 +105,7 @@ def sanitize_text(text: str) -> Tuple[str, List[str]]:
 
 def _require(obj: dict, field: str, rel: str, lineno: int):
     if field not in obj or obj[field] is None:
-        raise ParseError(f"{rel}:{lineno}: missing required field {field!r}")
+        raise ParseError(f"{rel}:{lineno}: missing required field {field}")
     return obj[field]
 
 
@@ -90,11 +122,11 @@ def _parse_cvss(value, rel: str, lineno: int) -> float:
 
 
 def parse_artifact(path: Path, rel_name: str) -> List[Finding]:
-    """Parse one JSONL artifact file into Findings (line numbers are evidence lines)."""
+    """Parse one JSONL artifact file and return the Finding list (line numbers are evidence lines)."""
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
-        raise ParseError(f"{rel_name}: failed to read: {exc}") from None
+        raise ParseError(f"{rel_name}: failed to read file: {exc}") from None
 
     stage = Path(rel_name).stem
     findings: List[Finding] = []
@@ -114,15 +146,15 @@ def parse_artifact(path: Path, rel_name: str) -> List[Finding]:
         criticality = obj.get("asset_criticality", "medium")
         if criticality not in ASSET_CRITICALITIES:
             raise ParseError(
-                f"{rel_name}:{lineno}: invalid asset_criticality {criticality!r} "
-                f"(allowed: {', '.join(ASSET_CRITICALITIES)})")
+                f"{rel_name}:{lineno}: invalid asset_criticality value: {criticality!r}"
+                f" (allowed: {', '.join(ASSET_CRITICALITIES)})")
         reachability = obj["reachability"]
         if reachability not in REACHABILITIES:
             raise ParseError(
-                f"{rel_name}:{lineno}: invalid reachability {reachability!r} "
-                f"(allowed: {', '.join(REACHABILITIES)})")
+                f"{rel_name}:{lineno}: invalid reachability value: {reachability!r}"
+                f" (allowed: {', '.join(REACHABILITIES)})")
 
-        # Injection gate: redact and record, one free-text field at a time
+        # Injection gate: redact each free-text field and record the hits
         clean: dict = {}
         flags: List[str] = []
         for field in TEXT_FIELDS:
@@ -157,7 +189,7 @@ def parse_artifact(path: Path, rel_name: str) -> List[Finding]:
 
 
 def load_artifacts(input_dir) -> List[Finding]:
-    """Load every `*.jsonl` artifact in a directory (sorted by name: deterministic)."""
+    """Load every `*.jsonl` artifact in the directory (sorted by file name; deterministic)."""
     directory = Path(input_dir)
     if not directory.is_dir():
         raise ParseError(f"input directory does not exist or is not a directory: {directory}")
@@ -168,7 +200,7 @@ def load_artifacts(input_dir) -> List[Finding]:
 
 
 def digest_inputs(input_dir) -> str:
-    """Content digest (sha256) of the input artifacts; anchors reports to an input version."""
+    """Content digest (sha256) of the input artifacts; anchors the report to an input version."""
     directory = Path(input_dir)
     h = hashlib.sha256()
     for path in sorted(directory.glob("*.jsonl"), key=lambda p: p.name):

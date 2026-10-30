@@ -198,3 +198,43 @@ def test_demo_script_runs_end_to_end(tmp_path):
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "Independent verdict: PASS" in proc.stdout
     assert "Tamper caught as expected" in proc.stdout
+
+
+def test_validator_fails_when_a_risk_is_dropped_from_the_report(tmp_path):
+    """A risk can be deleted from the report as long as the register stays
+    self-consistent — the report must still account for every input finding."""
+    out = tmp_path / "outputs"
+    run_pipeline(DEMO_INPUTS, out)
+    summary_path = out / "summary.json"
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    dropped = [r for r in summary["risks"] if r["id"] == "R-008"]
+    assert dropped, "expected R-008 in the demo output"
+    summary["risks"] = [r for r in summary["risks"] if r["id"] != "R-008"]
+    for i, r in enumerate(summary["risks"], 1):
+        r["rank"] = i
+    summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n",
+                            encoding="utf-8")
+    # regenerate a self-consistent register so only the coverage gap remains
+    from evidencechain.report import render_report
+    (out / "risk_register.md").write_text(
+        render_report(summary), encoding="utf-8")
+    validator = load_tool("validate_outputs")
+    code = validator.main(["--inputs", str(DEMO_INPUTS), "--outputs", str(out)])
+    assert code != 0, "dropping a risk must fail the validator"
+
+
+def test_validator_fails_when_totals_are_falsified(tmp_path):
+    """The totals block must be checked against the risks it describes."""
+    out = tmp_path / "outputs"
+    run_pipeline(DEMO_INPUTS, out)
+    summary_path = out / "summary.json"
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    summary["totals"]["raw_findings"] = 999
+    summary["totals"]["unique_risks"] = 999
+    summary["totals"]["merged_duplicates"] = -42
+    summary["totals"]["by_severity"] = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+    summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n",
+                            encoding="utf-8")
+    validator = load_tool("validate_outputs")
+    code = validator.main(["--inputs", str(DEMO_INPUTS), "--outputs", str(out)])
+    assert code != 0, "falsified totals must fail the validator"

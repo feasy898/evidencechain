@@ -64,9 +64,29 @@ bash demo/run_demo.sh
 On Python 3.14.4 / pytest 9.1.1 this produces:
 
 - the pipeline: `10 raw findings -> 8 unique risks (2 duplicates merged)`, verdict PASS
-- the validator: all 5 checks PASS, exit code 0
-- the demo: the tampered ranking is caught (`ranking_matches_recomputed` FAIL, exit code 1),
-  and the offline rerun is byte-identical to the normal run
+- the validator: all 6 checks PASS, exit code 0
+- the demo: the tampered ranking is caught — both `ranking_matches_recomputed` and
+  `register_matches_summary` FAIL, exit code 1 — and the offline rerun is byte-identical
+  to the normal run (the offline drill needs `unshare`; without it the script prints
+  that it was skipped and does not claim it)
+
+## What the output looks like
+
+`sample_output/` holds the artifacts this repository produces for the demo inputs, so
+you can see the shape of the result without running anything first:
+
+| File | What it is |
+|---|---|
+| `sample_output/risk_register.md` | the human-readable register: summary, the ranked table, and per-risk remediation |
+| `sample_output/summary.json` | the same result as structured data, including the `injection_flags` audit trail |
+
+The register table has one row per risk, and every row ends with the evidence it rests
+on — `stage2_scan.jsonl:1, stage2_scan.jsonl:2` — so a reader can open the raw artifact
+line and check the claim:
+
+```
+| 1 | R-001 | Out-of-bounds write in image parser | svc-frontend-02 | critical | 9.1 | 9.1 | network | stage2_scan | stage2_scan.jsonl:1, stage2_scan.jsonl:2 | Upgrade image parser to 3.2.1 |
+```
 
 ## How it works
 
@@ -97,7 +117,7 @@ injection gate: anything that looks like a prompt-injection payload (for example
 `[REDACTED-INJECTION]`, and the matched patterns are recorded in `injection_flags` on
 that risk in `summary.json` — so the audit trail shows what was caught, on which risk.
 
-The independent validator runs five checks over the outputs:
+The independent validator runs six checks over the outputs:
 
 1. `digest_matches` — the input digest anchored in the report matches the current inputs
 2. `evidence_resolves` — every `file:line` evidence reference exists in the input
@@ -109,7 +129,10 @@ The independent validator runs five checks over the outputs:
    never imported)
 4. `register_matches_summary` — every cell of the Markdown register (title, CVSS,
    priority, evidence refs, remediation, all eleven columns) matches `summary.json`
-5. `no_known_payload_in_outputs` — the output fields that carry artifact text are
+5. `coverage_complete` — every finding in the input artifacts is accounted for by the
+   report, and the totals block agrees with the risks it describes (a risk deleted from
+   the report, or a falsified count, fails here)
+6. `no_known_payload_in_outputs` — the output fields that carry artifact text are
    re-scanned with the known injection patterns
 
 Any failed check exits non-zero.
@@ -134,9 +157,9 @@ Any failed check exits non-zero.
 
 ## Testing
 
-`python3 -m pytest tests/ -q` runs **74 tests**, all passing (Python 3.14.4,
-pytest 9.1.1): parse 12, aggregate 12, prioritize 13, report 13, injection gate 9,
-pipeline + validator 15. Beyond the usual unit coverage, the suite pins down the
+`python3 -m pytest tests/ -q` runs **96 tests**, all passing (Python 3.14.4,
+pytest 9.1.1): parse 12, aggregate 12, prioritize 13, report 13, injection gate 29,
+pipeline + validator 17. Beyond the usual unit coverage, the suite pins down the
 properties this project exists for: byte-identical reruns, evidence references that
 resolve to real input lines, an AST check that no module imports a network-capable
 library, and validator failure paths — tampered ranking, an altered register cell, and

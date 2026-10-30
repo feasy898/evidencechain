@@ -1,10 +1,9 @@
 """Data contracts: Evidence / Finding / RiskItem.
 
-Conventions:
-- Evidence.ref() is always `filename:line`, where the line number is the real
-  line recorded by the parser while reading the artifact from disk.
-- None of the dataclasses perform I/O, which keeps them trivially serializable
-  and recomputable.
+Conventions (the verifiable semantics this module relies on):
+- Evidence.ref() is always `file:line`, where line is the real line number recorded
+  by the parser when reading from disk.
+- None of the dataclasses perform I/O, which keeps them easy to serialize and recompute.
 """
 from __future__ import annotations
 
@@ -13,15 +12,12 @@ from typing import Optional, Tuple
 
 
 class ParseError(Exception):
-    """An input artifact is invalid (bad JSON / missing field / out-of-range value).
-
-    The message always carries `file:line`.
-    """
+    """Invalid input artifact (bad JSON / missing field / out-of-range value). The message must include `file:line`."""
 
 
 @dataclass(frozen=True)
 class Evidence:
-    """A single evidence reference pointing at one line of an input artifact."""
+    """One evidence reference: points at a single line of an input artifact."""
 
     file: str
     line: int
@@ -36,7 +32,7 @@ class Evidence:
 
 @dataclass
 class Finding:
-    """One raw finding as produced by the parse layer (not deduplicated, not ranked)."""
+    """A single raw finding from the parsing layer (not deduplicated, not ranked)."""
 
     finding_id: str
     stage: str
@@ -70,7 +66,7 @@ class Finding:
 
 @dataclass
 class RiskItem:
-    """Aggregate-layer output: one unique risk after cross-stage merging."""
+    """Aggregation-layer product: one unique risk merged across stages."""
 
     key: str
     title: str
@@ -100,5 +96,4 @@ class RiskItem:
             "remediation": self.remediation,
             "merged_from": list(self.merged_from),
             "note": self.note,
-            "injection_flags": list(self.injection_flags),
         }

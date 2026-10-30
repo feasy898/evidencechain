@@ -260,6 +260,74 @@ def _check_injection(outputs: Path) -> tuple[bool, str]:
     return True, "no text matching the known injection patterns remains in the outputs"
 
 
+def _check_coverage(inputs: Path, summary: dict) -> tuple[bool, str]:
+    """Completeness: every finding in the input artifacts must be accounted for.
+
+    Two independent facts are checked here:
+
+    * the input artifacts really contain N findings — counted here from the
+      artifact files themselves, not read from the report;
+    * the report accounts for all N: the risks it lists cite every input
+      finding (directly, or as one of a merged group), and the totals block
+      agrees with the risks it describes.
+
+    Without this, a risk could be deleted from the report and the register
+    regenerated to match, and every other check would still pass.
+    """
+    problems = []
+    input_finding_ids = set()
+    for path in sorted(inputs.glob("*.jsonl")):
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if not line.strip():
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                problems.append(f"input line is not valid JSON: {path.name}:{lineno}")
+                continue
+            if record.get("id"):
+                input_finding_ids.add(str(record["id"]))
+
+    covered = set()
+    for risk in summary["risks"]:
+        for ev in risk.get("evidence", []):
+            if ev.get("finding_id"):
+                covered.add(str(ev["finding_id"]))
+        for fid in risk.get("merged_from", []):
+            covered.add(str(fid))
+    missing = sorted(input_finding_ids - covered)
+    if missing:
+        problems.append(f"{len(missing)} input finding(s) are not represented in the "
+                        f"report: {', '.join(missing[:8])}"
+                        + (" ..." if len(missing) > 8 else ""))
+
+    totals = summary.get("totals") or {}
+    risks = summary.get("risks") or []
+    if totals:
+        if totals.get("unique_risks") != len(risks):
+            problems.append(f"totals.unique_risks={totals.get('unique_risks')} but the "
+                            f"report lists {len(risks)} risks")
+        if totals.get("raw_findings") != len(input_finding_ids):
+            problems.append(f"totals.raw_findings={totals.get('raw_findings')} but the "
+                            f"inputs contain {len(input_finding_ids)} findings")
+        merged = sum(len(r.get("merged_from", [])) for r in risks)
+        expected_merged = len(input_finding_ids) - len(risks)
+        if totals.get("merged_duplicates") != expected_merged:
+            problems.append(f"totals.merged_duplicates={totals.get('merged_duplicates')} "
+                            f"but the risks merge {expected_merged} duplicate(s)")
+        by_sev = totals.get("by_severity")
+        if isinstance(by_sev, dict):
+            actual = {}
+            for r in risks:
+                actual[r["severity"]] = actual.get(r["severity"], 0) + 1
+            if by_sev != actual:
+                problems.append(f"totals.by_severity={by_sev} but the risks give {actual}")
+    if problems:
+        return False, "; ".join(problems)
+    return True, (f"all {len(input_finding_ids)} input findings are accounted for and "
+                  f"the totals agree with the {len(risks)} reported risks")
+
+
 def validate(inputs: Path, outputs: Path) -> tuple[int, list[tuple[str, bool, str]]]:
     summary_path = outputs / "summary.json"
     if not summary_path.exists():
@@ -271,6 +339,7 @@ def validate(inputs: Path, outputs: Path) -> tuple[int, list[tuple[str, bool, st
         ("evidence_resolves",) + _check_evidence(inputs, summary),
         ("ranking_matches_recomputed",) + _check_ranking(summary),
         ("register_matches_summary",) + _check_register(outputs, summary),
+        ("coverage_complete",) + _check_coverage(inputs, summary),
         ("no_known_payload_in_outputs",) + _check_injection(outputs),
     ]
     ok = all(passed for _, passed, _ in results)

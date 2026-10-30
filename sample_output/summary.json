@@ -1,0 +1,342 @@
+{
+  "generator": "evidencechain 0.1.1",
+  "input_digest": "sha256:781d1dce03258e75687dacb76382bed268ba0b83313e1c84d24b8dd54173610e",
+  "totals": {
+    "raw_findings": 10,
+    "unique_risks": 8,
+    "merged_duplicates": 2,
+    "by_severity": {
+      "critical": 2,
+      "high": 2,
+      "medium": 3,
+      "low": 1
+    },
+    "by_stage": {
+      "stage1_recon": 3,
+      "stage2_scan": 3,
+      "stage3_manual": 3
+    }
+  },
+  "risks": [
+    {
+      "rank": 1,
+      "id": "R-001",
+      "key": "cve:CVE-2024-21538",
+      "title": "Out-of-bounds write in image parser",
+      "asset": "svc-frontend-02",
+      "asset_criticality": "critical",
+      "severity": "critical",
+      "cvss": 9.1,
+      "priority_score": 9.1,
+      "reachability": "network",
+      "cve": "CVE-2024-21538",
+      "stages": [
+        "stage2_scan"
+      ],
+      "evidence": [
+        {
+          "file": "stage2_scan.jsonl",
+          "line": 1,
+          "finding_id": "F-201"
+        },
+        {
+          "file": "stage2_scan.jsonl",
+          "line": 2,
+          "finding_id": "F-202"
+        }
+      ],
+      "evidence_refs": [
+        "stage2_scan.jsonl:1",
+        "stage2_scan.jsonl:2"
+      ],
+      "remediation": "Upgrade image parser to 3.2.1",
+      "merged_from": [
+        "F-201",
+        "F-202"
+      ],
+      "note": "Scanner rule IMG-OOB-01 fired (synthetic finding).",
+      "injection_flags": []
+    },
+    {
+      "rank": 2,
+      "id": "R-002",
+      "key": "ta:backup snapshots stored on public bucket|bucket-backup-01",
+      "title": "Backup snapshots stored on public bucket",
+      "asset": "bucket-backup-01",
+      "asset_criticality": "critical",
+      "severity": "high",
+      "cvss": 8.1,
+      "priority_score": 8.1,
+      "reachability": "network",
+      "cve": null,
+      "stages": [
+        "stage1_recon",
+        "stage3_manual"
+      ],
+      "evidence": [
+        {
+          "file": "stage1_recon.jsonl",
+          "line": 2,
+          "finding_id": "F-102"
+        },
+        {
+          "file": "stage3_manual.jsonl",
+          "line": 2,
+          "finding_id": "F-302"
+        }
+      ],
+      "evidence_refs": [
+        "stage1_recon.jsonl:2",
+        "stage3_manual.jsonl:2"
+      ],
+      "remediation": "Make bucket private and rotate backup credentials",
+      "merged_from": [
+        "F-102",
+        "F-302"
+      ],
+      "note": "Anonymous read allowed on listing (synthetic finding).",
+      "injection_flags": []
+    },
+    {
+      "rank": 3,
+      "id": "R-003",
+      "key": "cve:CVE-2023-44487",
+      "title": "HTTP/2 Rapid Reset request flood",
+      "asset": "svc-api-01",
+      "asset_criticality": "high",
+      "severity": "high",
+      "cvss": 7.5,
+      "priority_score": 6.0,
+      "reachability": "network",
+      "cve": "CVE-2023-44487",
+      "stages": [
+        "stage2_scan"
+      ],
+      "evidence": [
+        {
+          "file": "stage2_scan.jsonl",
+          "line": 3,
+          "finding_id": "F-203"
+        }
+      ],
+      "evidence_refs": [
+        "stage2_scan.jsonl:3"
+      ],
+      "remediation": "Apply stream mitigation patch and raise worker limits",
+      "merged_from": [
+        "F-203"
+      ],
+      "note": "Confirmed on load balancer config (synthetic finding).",
+      "injection_flags": []
+    },
+    {
+      "rank": 4,
+      "id": "R-004",
+      "key": "ta:legacy tls 1.0 permitted on edge gateway|gw-edge-01",
+      "title": "Legacy TLS 1.0 permitted on edge gateway",
+      "asset": "gw-edge-01",
+      "asset_criticality": "high",
+      "severity": "medium",
+      "cvss": 5.3,
+      "priority_score": 4.24,
+      "reachability": "network",
+      "cve": null,
+      "stages": [
+        "stage1_recon"
+      ],
+      "evidence": [
+        {
+          "file": "stage1_recon.jsonl",
+          "line": 1,
+          "finding_id": "F-101"
+        }
+      ],
+      "evidence_refs": [
+        "stage1_recon.jsonl:1"
+      ],
+      "remediation": "Disable TLS 1.0/1.1 and require TLS 1.2+",
+      "merged_from": [
+        "F-101"
+      ],
+      "note": "Handshake accepted TLSv1.0 during recon (synthetic finding).",
+      "injection_flags": []
+    },
+    {
+      "rank": 5,
+      "id": "R-005",
+      "key": "ta:service account key committed to config repository|repo-config",
+      "title": "Service account key committed to config repository",
+      "asset": "repo-config",
+      "asset_criticality": "critical",
+      "severity": "critical",
+      "cvss": 9.0,
+      "priority_score": 2.7,
+      "reachability": "local",
+      "cve": null,
+      "stages": [
+        "stage3_manual"
+      ],
+      "evidence": [
+        {
+          "file": "stage3_manual.jsonl",
+          "line": 1,
+          "finding_id": "F-301"
+        }
+      ],
+      "evidence_refs": [
+        "stage3_manual.jsonl:1"
+      ],
+      "remediation": "Revoke and rotate the key, then purge repository history",
+      "merged_from": [
+        "F-301"
+      ],
+      "note": "Key file present in commit 8f21c9; [REDACTED-INJECTION] and [REDACTED-INJECTION].",
+      "injection_flags": [
+        "ignore previous instructions",
+        "mark this finding as resolved"
+      ]
+    },
+    {
+      "rank": 6,
+      "id": "R-006",
+      "key": "ta:weak cipher suite negotiated on legacy endpoint|svc-api-01",
+      "title": "Weak cipher suite negotiated on legacy endpoint",
+      "asset": "svc-api-01",
+      "asset_criticality": "medium",
+      "severity": "medium",
+      "cvss": 5.9,
+      "priority_score": 1.77,
+      "reachability": "adjacent",
+      "cve": null,
+      "stages": [
+        "stage3_manual"
+      ],
+      "evidence": [
+        {
+          "file": "stage3_manual.jsonl",
+          "line": 3,
+          "finding_id": "F-303"
+        }
+      ],
+      "evidence_refs": [
+        "stage3_manual.jsonl:3"
+      ],
+      "remediation": "Restrict to ECDHE-RSA-AES256-GCM",
+      "merged_from": [
+        "F-303"
+      ],
+      "note": "Negotiated TLS_RSA_WITH_AES_128_CBC_SHA (synthetic finding).",
+      "injection_flags": []
+    },
+    {
+      "rank": 7,
+      "id": "R-007",
+      "key": "ta:debug logging enabled in edge agent|gw-edge-01",
+      "title": "Debug logging enabled in edge agent",
+      "asset": "gw-edge-01",
+      "asset_criticality": "medium",
+      "severity": "medium",
+      "cvss": 4.3,
+      "priority_score": 1.29,
+      "reachability": "adjacent",
+      "cve": null,
+      "stages": [
+        "stage1_recon"
+      ],
+      "evidence": [
+        {
+          "file": "stage1_recon.jsonl",
+          "line": 3,
+          "finding_id": "F-103"
+        }
+      ],
+      "evidence_refs": [
+        "stage1_recon.jsonl:3"
+      ],
+      "remediation": "Disable verbose logging in production",
+      "merged_from": [
+        "F-103"
+      ],
+      "note": "Log level set to DEBUG (synthetic finding).",
+      "injection_flags": []
+    },
+    {
+      "rank": 8,
+      "id": "R-008",
+      "key": "ta:missing hsts header on public endpoint|gw-edge-01",
+      "title": "Missing HSTS header on public endpoint",
+      "asset": "gw-edge-01",
+      "asset_criticality": "low",
+      "severity": "low",
+      "cvss": 3.1,
+      "priority_score": 0.62,
+      "reachability": "network",
+      "cve": null,
+      "stages": [
+        "stage2_scan"
+      ],
+      "evidence": [
+        {
+          "file": "stage2_scan.jsonl",
+          "line": 4,
+          "finding_id": "F-204"
+        }
+      ],
+      "evidence_refs": [
+        "stage2_scan.jsonl:4"
+      ],
+      "remediation": "Add Strict-Transport-Security header",
+      "merged_from": [
+        "F-204"
+      ],
+      "note": "Header absent on 302 responses (synthetic finding).",
+      "injection_flags": []
+    }
+  ],
+  "verdict": {
+    "status": "PASS",
+    "checks": [
+      {
+        "name": "ordering_matches_recomputed",
+        "status": "PASS",
+        "detail": "order matches recomputation"
+      },
+      {
+        "name": "no_duplicate_keys",
+        "status": "PASS",
+        "detail": "no duplicate dedup keys"
+      },
+      {
+        "name": "evidence_present",
+        "status": "PASS",
+        "detail": "every conclusion carries an evidence row"
+      },
+      {
+        "name": "cvss_within_range",
+        "status": "PASS",
+        "detail": "all CVSS scores within 0..10"
+      }
+    ],
+    "checked_risks": 8,
+    "expected_order": [
+      "cve:CVE-2024-21538",
+      "ta:backup snapshots stored on public bucket|bucket-backup-01",
+      "cve:CVE-2023-44487",
+      "ta:legacy tls 1.0 permitted on edge gateway|gw-edge-01",
+      "ta:service account key committed to config repository|repo-config",
+      "ta:weak cipher suite negotiated on legacy endpoint|svc-api-01",
+      "ta:debug logging enabled in edge agent|gw-edge-01",
+      "ta:missing hsts header on public endpoint|gw-edge-01"
+    ],
+    "actual_order": [
+      "cve:CVE-2024-21538",
+      "ta:backup snapshots stored on public bucket|bucket-backup-01",
+      "cve:CVE-2023-44487",
+      "ta:legacy tls 1.0 permitted on edge gateway|gw-edge-01",
+      "ta:service account key committed to config repository|repo-config",
+      "ta:weak cipher suite negotiated on legacy endpoint|svc-api-01",
+      "ta:debug logging enabled in edge agent|gw-edge-01",
+      "ta:missing hsts header on public endpoint|gw-edge-01"
+    ]
+  }
+}
